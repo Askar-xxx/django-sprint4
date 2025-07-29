@@ -8,6 +8,7 @@ from django.views.generic import (
     ListView,
     UpdateView,
 )
+from django.contrib.auth.views import PasswordChangeView
 from django.core.exceptions import PermissionDenied
 from .forms import (
     CommentCreateForm,
@@ -15,26 +16,55 @@ from .forms import (
     EditUserFormTester,
 )
 from .models import Category, Comment, Post, User
-from .mixins import CommentEditMixin, PostsEditMixin
+from .mixins import CommentEditMixin, PostsEditMixin, ProfileMixin
 from .utils import filter_published_posts
 
 POSTS_PER_PAGE = 10
 
 
+class ProfileView(ProfileMixin, ListView):
+
+    def get_queryset(self):
+        self.profile_user = self.get_profile_user()
+        queryset = self.get_posts_queryset(self.profile_user)
+
+        if self.request.user != self.profile_user:
+            queryset = filter_published_posts(queryset)
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            'profile': self.profile_user,
+            'is_owner': self.request.user == self.profile_user
+        })
+        return context
+
+
 class ProfileUpdateView(LoginRequiredMixin, UpdateView):
     model = User
     form_class = EditUserFormTester
-    template_name = 'blog/profile.html'
-    success_url = reverse_lazy('blog:index')
+    template_name = 'blog/user.html'
 
     def get_object(self, queryset=None):
         return self.request.user
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['form'] = self.get_form()
-        context['profile'] = self.request.user
-        return context
+    def get_success_url(self):
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user.username}
+        )
+
+
+class ProfilePasswordChangeView(LoginRequiredMixin, PasswordChangeView):
+    template_name = 'registration/password_change_form.html'
+
+    def get_success_url(self):
+        return reverse(
+            'blog:profile',
+            kwargs={'username': self.request.user.username}
+        )
 
 
 class PostDisplayView(DetailView):
